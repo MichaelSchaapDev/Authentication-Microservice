@@ -1,0 +1,57 @@
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+  name: authentication-microservice 
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: authentication-microservice 
+  template:
+    metadata:
+      labels:
+        app: authentication-microservice 
+    spec:
+      containers:
+        - name: authentication-microservice 
+          image: labeltool.azurecr.io/authentication-microservice:$(tag)
+          env:
+            - name: PASSPORT_CLIENT_SECRET
+              value: "$(PASSPORT_CLIENT_SECRET)"
+            - name: PASSPORT_CLIENT_ID
+              value: "$(PASSPORT_CLIENT_ID)" 
+            - name: DB_HOST
+              value: "$(DB_HOST)"
+            - name: DB_CONNECTION
+              value: "$(DB_CONNECTION)"
+            - name: DB_DATABASE
+              value: "$(DB_DATABASE)"
+            - name: DB_PORT
+              value: "$(DB_PORT)"
+            - name: DB_USERNAME
+              value: "$(DB_USERNAME)"
+            - name: DB_PASSWORD
+              value: '$(DB_PASSWORD)'
+            - name: DB_ROOT_PASSWORD
+              value: '$(DB_ROOT_PASSWORD)'
+            - name: APP_URL
+              value: "$(APP_URL)"
+            - name: APP_ENV
+              value: "$(APP_ENV)"
+            - name: APP_NAME
+              value: "$(APP_NAME)"
+            - name: APP_KEY
+              value: "$(APP_KEY)"
+            - name: APP_DEBUG
+              value: "$(APP_DEBUG)"
+            - name: SECONDARY_OAUTH_URL
+              value: "$(SECONDARY_OAUTH_URL)"
+          ports:
+            - containerPort: 80
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"

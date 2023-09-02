@@ -1,0 +1,119 @@
+# Docker
+# Build a Docker image
+# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
+
+trigger:
+- main
+
+resources:
+- repo: self
+
+variables:
+  tag: '$(Build.BuildId)'
+  repository: Authentication-Microservice
+  dockerfile: $(Build.SourcesDirectory)/Dockerfile
+  containerRegistry: rg-se-vt-s6-gr5-registry
+  kubernetesService: rg-se-vt-s6-gr5-kubernetes
+  k8sNamespace: 'label-dev'
+  imagePullSecret: 'auth-image-pull-secret'
+
+stages:
+- stage: Build
+  displayName: Build and push stage
+  jobs:  
+  - job: Build
+    displayName: Build job
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - task: Docker@2
+      displayName: Build and push an image to container registry
+      inputs:
+        command: buildAndPush
+        repository: $(repository)
+        dockerfile: $(dockerfile)
+        containerRegistry: $(containerRegistry)
+        tags: |
+          $(tag)
+          latest
+      env:
+        PASSPORT_CLIENT_SECRET: $(PASSPORT_CLIENT_SECRET)
+        PASSPORT_CLIENT_ID: $(PASSPORT_CLIENT_ID)
+        DB_USERNAME: $(DB_USERNAME)
+        DB_ROOT_PASSWORD: $(DB_ROOT_PASSWORD)
+        DB_PORT: $(DB_PORT)
+        DB_PASSWORD: $(DB_PASSWORD)
+        DB_HOST: $(DB_HOST)
+        DB_DATABASE: $(DB_DATABASE)
+        DB_CONNECTION: $(DB_CONNECTION)
+        APP_URL: $(APP_URL)
+        SECONDARY_OAUTH_URL: $(SECONDARY_OAUTH_URL)
+        APP_KEY: $(APP_KEY)
+        APP_NAME: $(APP_NAME)
+        APP_ENV: $(APP_ENV)
+        APP_DEBUG: $(APP_DEBUG)
+    - task: PublishPipelineArtifact@1
+      inputs:
+        artifactName: 'manifests'
+        path: 'manifests'
+
+- stage: Deploy
+  displayName: Deploy stage
+  dependsOn: Build
+  jobs:
+  - deployment: Deploy
+    displayName: Deploy job
+    pool:
+      vmImage: ubuntu-latest
+    environment: 'K8_Label' #customize with your environment
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifactName: 'manifests'
+              downloadPath: '$(System.ArtifactsDirectory)/manifests'
+
+          - task: KubernetesManifest@0
+            displayName: Create imagePullSecret
+            inputs:
+              action: createSecret
+              kubernetesServiceConnection: $(kubernetesService)
+              secretName: $(imagePullSecret)
+              namespace: $(k8sNamespace)
+              dockerRegistryEndpoint: $(containerRegistry)
+          
+          - task: replacetokens@5
+            inputs:
+              rootDirectory: '$(System.ArtifactsDirectory)/manifests/'
+              targetFiles: '**/*.*'
+              encoding: 'auto'
+              tokenPattern: 'custom'
+              tokenPrefix: '$('
+              tokenSuffix: ')'
+              writeBOM: true
+              verbosity: 'detailed'
+              actionOnMissing: 'fail'
+              keepToken: false
+              actionOnNoFiles: 'continue'
+              enableTransforms: false
+              enableRecursion: false
+              useLegacyPattern: false
+              enableTelemetry: true
+
+          - task: KubernetesManifest@0
+            displayName: Deploy to Kubernetes cluster
+            inputs:
+              action: deploy
+              kubernetesServiceConnection: $(kubernetesService)
+              namespace: $(k8sNamespace)
+              manifests: |
+                $(System.ArtifactsDirectory)/manifests/deployment.yaml
+                $(System.ArtifactsDirectory)/manifests/service.yaml
+              imagePullSecrets: |
+                $(imagePullSecret)
+              containers: |
+                $(containerRegistry)/$(repository):$(tag)
+            env:
+              tag: $(tag)
